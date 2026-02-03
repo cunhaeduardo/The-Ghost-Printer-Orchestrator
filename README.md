@@ -1,7 +1,3 @@
-Here is your **final, corrected, ready-to-paste `README.md`** with the stall detection fix applied everywhere and the run order exactly how you want it.
-
----
-
 # 👻 The Ghost Printer Orchestrator
 
 An event-driven automation engine that ingests **noisy printer telemetry** from a simulator, **cleans & normalizes** it in real time, persists it into a **NoSQL database**, and runs **rule-based alerting with anti-spam protection**.
