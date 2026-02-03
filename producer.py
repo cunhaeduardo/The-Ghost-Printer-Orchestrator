@@ -8,9 +8,9 @@ from kafka import KafkaProducer
 KAFKA_TOPIC = "printer_raw_topic"
 KAFKA_BOOTSTRAP = "127.0.0.1:9092"  # for host machine
 
-MIN_INTERVAL_SECONDS = 0.01
+MIN_INTERVAL_SECONDS = 0.05
 MAX_INTERVAL_SECONDS = 60
-BLOCK_SECONDS = 60
+BLOCK_SECONDS = 120
 
 # API Endpoint
 API_URL = "http://127.0.0.1:5000/getPrinterStatus"
