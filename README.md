@@ -161,7 +161,7 @@ no_spam_topic
 
 Rule example:
 
-> If `error == "JAM"` and `remainingLabels` does not decrease for 5 minutes → emit alert
+> If `error == "JAM"` and `remainingLabels` does not decrease for X minutes → emit alert
 
 The alert is published to:
 
