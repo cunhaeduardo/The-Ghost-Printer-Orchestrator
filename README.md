@@ -42,6 +42,45 @@ PrintSimulator.exe  -->  producer.py  -->  Kafka (printer_raw_topic)
                                            v
                                       Kafka (maintenance_required_topic) --> mongodb_maintenance_db.py --> maintenance_required_topic --> MongoDB (BloqIt_PrinterDB[maintenance_required]
 
+PrintSimulator.exe
+      │
+      ▼
+  producer.py
+      │
+      ▼
+Kafka: printer_raw_topic
+      │
+      ▼
+  cleaner.py
+      │
+      ▼
+Kafka: printer_cleaned_topic
+      │
+      ▼
+  antispam.py
+      │
+      ├──────────────► Kafka: maintenance_required_topic
+      │                         │
+      │                         ▼
+      │              mongodb_maintenance_db.py
+      │                         │
+      │                         ▼
+      │        MongoDB: BloqIt_PrinterDB[maintenance_required]
+      │
+      ▼
+Kafka: no_spam_topic
+      │
+      ├──────────────► stallDetection.py --> Kafka: stall_detection_topic (alerts)
+      │
+      ▼
+mongodb_main_db.py
+      │
+      ▼
+MongoDB: BloqIt_PrinterDB[no_spam_detection]
+
+
+
+
 
 ```
 
