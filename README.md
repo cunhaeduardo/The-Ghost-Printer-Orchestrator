@@ -26,19 +26,23 @@ This orchestrator:
 ## 🏗️ Architecture Overview
 
 ```
-PrintSimulator.exe  -->  producer.py  -->  Kafka (printSimulatorAPI topic)
+PrintSimulator.exe  -->  producer.py  -->  Kafka (printer_raw_topic)
                                            |
                                            v
-                                     consumer.py
-                                           |
-                     -----------------------------------------
-                     |                   |                   |
-               Normalization        Anti-spam logic      Rule engine
-                     |                   |                   |
-                     -----------------------------------------
+                                     cleaner.py
+                                           |                           
+                                           v                            
+                               Kafka (printer_cleaned_Topic)      
                                            |
                                            v
-                                       MongoDB
+                                      antispam.py   --> Kafka (no_spam_topic) --> mongodb_main_db.py --> no_spam_topic --> MongoDB (BloqIt_PrinterDB[no_spam_detection])
+                                           |                                                                  |
+                                           |                                                                  v 
+                                           |                                                                stallDetection.py --> Alert(stall_detection_topic)
+                                           v
+                                      Kafka (maintenance_required_topic) --> mongodb_maintenance_db.py --> maintenance_required_topic --> MongoDB (BloqIt_PrinterDB[maintenance_required]
+
+
 ```
 
 ---
