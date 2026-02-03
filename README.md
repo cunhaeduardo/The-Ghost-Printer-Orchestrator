@@ -127,21 +127,27 @@ Implemented in `antispam.py`.
 
 If a printer sends **more than 10 messages within 1 second**:
 
-* Messages are **not** forwarded to the main flow
+* One message forward to main flow, others are dropped
 * A record is sent to `maintenance_required_topic`
+* Cool down system is activated per X seconds.
 
 Otherwise, messages continue normally to `no_spam_topic`.
 
 ---
 
-## 🗃️ MongoDB Collections
+## ⏳ Data Retention Strategy (Kafka, not MongoDB)
 
-| Collection             | Purpose                                      |
-| ---------------------- | -------------------------------------------- |
-| `no_spam_detection`    | Clean printer history with TTL               |
-| `maintenance_required` | Printers flagged for abnormal burst behavior |
+This project **does not use MongoDB TTL indexes**.
 
-Both collections use **TTL indexes** to automatically expire old logs.
+Instead, **Kafka topics themselves are configured** to automatically delete old data after **1 day** using topic-level configuration:
+
+* `cleanup.policy=delete`
+* `retention.ms=86400000` (24 hours)
+
+This means Kafka acts as the **time-bounded event store**, and consumers only process recent data.
+
+This configuration follows Kafka’s official topic configuration guidelines:
+[https://kafka.apache.org/30/generated/topic_config.html](https://kafka.apache.org/30/generated/topic_config.html)
 
 ---
 
@@ -236,8 +242,7 @@ You will now see the full pipeline operating through Kafka and MongoDB.
 
   * Check simulator is running
   * Check producer logs
-* Verify MongoDB collections and TTL indexes
-* All processors are idempotent — restarting them is safe
+* Restarting processors is safe (idempotent consumers)
 
 ---
 
