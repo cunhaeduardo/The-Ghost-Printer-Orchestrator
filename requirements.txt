@@ -1,0 +1,7 @@
+pyspark
+kafka-python
+pandas
+#numpy==1.24.3
+requests
+pymongo
+msgpack
