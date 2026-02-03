@@ -1,3 +1,7 @@
+Here is your **final, corrected, ready-to-paste `README.md`** with the stall detection fix applied everywhere and the run order exactly how you want it.
+
+---
+
 # 👻 The Ghost Printer Orchestrator
 
 An event-driven automation engine that ingests **noisy printer telemetry** from a simulator, **cleans & normalizes** it in real time, persists it into a **NoSQL database**, and runs **rule-based alerting with anti-spam protection**.
@@ -12,36 +16,19 @@ The simulator produces messy, duplicated, and inconsistent printer status JSON.
 
 This orchestrator:
 
-1. Polls the simulator API
-2. Streams raw events into Kafka
-3. Consumes the stream and **cleans / normalizes** the data
-4. Deduplicates noisy messages
-5. Stores time-bounded logs with TTL
-6. Applies **anti-spam protection**
-7. Runs **dynamic alert rules** (e.g., printer jam detection)
-8. Persists alerts and maintenance signals
+1. Streams raw events into Kafka
+2. Cleans and normalizes inconsistent data
+3. Detects and blocks printer spam bursts
+4. Persists only valid printer events
+5. Stores maintenance signals separately
+6. Runs stall detection rules in real time
+7. Emits alerts back into Kafka
 
 ---
 
 ## 🏗️ Architecture Overview
 
 ```
-PrintSimulator.exe  -->  producer.py  -->  Kafka (printer_raw_topic)
-                                           |
-                                           v
-                                     cleaner.py
-                                           |                           
-                                           v                            
-                               Kafka (printer_cleaned_Topic)      
-                                           |
-                                           v
-                                      antispam.py   --> Kafka (no_spam_topic) --> mongodb_main_db.py --> no_spam_topic --> MongoDB (BloqIt_PrinterDB[no_spam_detection])
-                                           |                                                                  |
-                                           |                                                                  v 
-                                           |                                                                stallDetection.py --> Alert(stall_detection_topic)
-                                           v
-                                      Kafka (maintenance_required_topic) --> mongodb_maintenance_db.py --> maintenance_required_topic --> MongoDB (BloqIt_PrinterDB[maintenance_required]
-
 PrintSimulator.exe
       │
       ▼
@@ -70,33 +57,30 @@ Kafka: printer_cleaned_topic
       ▼
 Kafka: no_spam_topic
       │
-      ├──────────────► stallDetection.py --> Kafka: stall_detection_topic (alerts)
+      ├──────────────► stallDetection.py
+      │                         │
+      │                         ▼
+      │             Kafka: stall_detection_topic (alerts)
       │
       ▼
 mongodb_main_db.py
       │
       ▼
 MongoDB: BloqIt_PrinterDB[no_spam_detection]
-
-
-
-
-
 ```
 
 ---
 
 ## 📦 Components
 
-| File                      | Responsibility                                                       |
-| ------------------------- | -------------------------------------------------------------------- |
-| `producer.py`             | Polls the simulator API and sends messages to Kafka                  |
-| `consumer.py`             | Consumes Kafka topic, cleans data, dedupes, runs rules, writes to DB |
-| `main.py`                 | Example streaming structure using `quixstreams`                      |
-| `docker-compose.yml`      | Kafka, Zookeeper and Kafka-UI setup                                  |
-| `PrintSimulator/`         | Windows executable exposing `/getPrinterStatus`                      |
-| *(suggested)* `db.py`     | MongoDB operations, TTL index, upserts                               |
-| *(suggested)* `alerts.py` | Rule evaluation and alert emission                                   |
+| File                        | Responsibility                                                       |
+| --------------------------- | -------------------------------------------------------------------- |
+| `producer.py`               | Sends raw simulator data to `printer_raw_topic`                      |
+| `cleaner.py`                | Normalizes schema and republishes to `printer_cleaned_topic`         |
+| `antispam.py`               | Detects burst spam and routes messages accordingly                   |
+| `mongodb_main_db.py`        | Consumes `no_spam_topic` and persists valid events                   |
+| `mongodb_maintenance_db.py` | Consumes `maintenance_required_topic` and persists maintenance flags |
+| `stallDetection.py`         | Consumes `no_spam_topic` and emits alerts to `stall_detection_topic` |
 
 ---
 
@@ -111,6 +95,82 @@ MongoDB: BloqIt_PrinterDB[no_spam_detection]
 
 ---
 
+## 🔄 Kafka Topics
+
+| Topic                        | Produced by         | Consumed by                               | Purpose              |
+| ---------------------------- | ------------------- | ----------------------------------------- | -------------------- |
+| `printer_raw_topic`          | `producer.py`       | `cleaner.py`                              | Raw simulator output |
+| `printer_cleaned_topic`      | `cleaner.py`        | `antispam.py`                             | Normalized data      |
+| `no_spam_topic`              | `antispam.py`       | `mongodb_main_db.py`, `stallDetection.py` | Valid printer events |
+| `maintenance_required_topic` | `antispam.py`       | `mongodb_maintenance_db.py`               | Spam burst detection |
+| `stall_detection_topic`      | `stallDetection.py` | Alert/monitoring systems                  | Critical alerts      |
+
+---
+
+## 🧹 Data Normalization
+
+`cleaner.py` enforces a consistent structure:
+
+* Converts numeric strings → integers
+* Extracts nested error fields
+* Guarantees consistent keys:
+
+  * `printerId`
+  * `timestamp`
+  * `status`
+  * `remainingLabels`
+  * `error`
+
+This ensures downstream processors operate on deterministic data.
+
+---
+
+## 🛑 Anti-Spam Logic
+
+Implemented in `antispam.py`.
+
+If a printer sends **more than 10 messages within 1 second**:
+
+* Messages are **not** forwarded to the main flow
+* A record is sent to `maintenance_required_topic`
+
+Otherwise, messages continue normally to `no_spam_topic`.
+
+---
+
+## 🗃️ MongoDB Collections
+
+| Collection             | Purpose                                      |
+| ---------------------- | -------------------------------------------- |
+| `no_spam_detection`    | Clean printer history with TTL               |
+| `maintenance_required` | Printers flagged for abnormal burst behavior |
+
+Both collections use **TTL indexes** to automatically expire old logs.
+
+---
+
+## 🚨 Stall Detection Rule
+
+`stallDetection.py` consumes messages directly from:
+
+```
+no_spam_topic
+```
+
+Rule example:
+
+> If `error == "JAM"` and `remainingLabels` does not decrease for 5 minutes → emit alert
+
+The alert is published to:
+
+```
+stall_detection_topic
+```
+
+MongoDB is **not** the source for this rule — Kafka is.
+
+---
+
 ## ⚙️ How to run locally
 
 ### 1️⃣ Start Kafka stack
@@ -119,23 +179,17 @@ MongoDB: BloqIt_PrinterDB[no_spam_detection]
 docker-compose up -d
 ```
 
-Kafka UI will be available at:
-
-```
-http://localhost:8080
-```
+Kafka UI: [http://localhost:8080](http://localhost:8080)
 
 ---
 
 ### 2️⃣ Start the Printer Simulator (Windows)
 
-Run:
-
 ```
 PrintSimulator\PrintSimulator.exe
 ```
 
-Verify the API:
+Test:
 
 ```
 http://127.0.0.1:5000/getPrinterStatus
@@ -151,135 +205,43 @@ pip install -r requirements.txt
 
 ---
 
-### 4️⃣ Run the Producer
+## ▶️ Start the processors (important order)
+
+Open **separate terminals** and start **everything except the producer**:
+
+```bash
+python cleaner.py
+python antispam.py
+python mongodb_main_db.py
+python mongodb_maintenance_db.py
+python stallDetection.py
+```
+
+These will wait for messages.
+
+---
+
+## ▶️ Start the data flow (last step)
+
+Finally, start the producer:
 
 ```bash
 python producer.py
 ```
 
-You should now see messages arriving in the `printSimulatorAPI` topic via Kafka UI.
-
----
-
-### 5️⃣ Run the Consumer / Processor
-
-```bash
-python consumer.py
-```
-
-This is where the core logic happens:
-
-* Cleaning
-* Deduplication
-* Anti-spam
-* Persistence
-* Rule evaluation
-
----
-
-## 🧹 Data Normalization Rules
-
-The simulator sends inconsistent values. The processor enforces:
-
-* Numeric strings → integers
-* Consistent schema:
-
-  * `printerId`
-  * `timestamp`
-  * `status`
-  * `remainingLabels`
-  * `error`
-* Composite dedupe key: `{printerId, timestamp}`
-
-Example:
-
-```python
-record['remainingLabels'] = int(record.get('remainingLabels') or 0)
-record['error'] = record.get('printerStatus', {}).get('error')
-```
-
----
-
-## 🛑 Anti-Spam Protection
-
-If a single printer sends **>10 messages within 1 second**:
-
-* The burst is dropped
-* A record is inserted into `maintenance_required` collection
-
-```
-{ printerId, first_seen }
-```
-
----
-
-## 🚨 Rule Engine & Alerts
-
-Rules are **data-driven** and stored in MongoDB so they can be changed without code updates.
-
-### Example rule: Stall Detection
-
-If:
-
-* `error == 'JAM'`
-* `remainingLabels` does not decrease for **5 minutes**
-
-Then:
-
-→ Emit `critical_alert`
-
-Example rule document:
-
-```json
-{
-  "name": "stall_detection",
-  "condition": {"error":"JAM"},
-  "window_seconds": 300,
-  "check": "remainingLabels_not_decreasing"
-}
-```
-
-Alerts are written to the `alerts` collection.
-
----
-
-## 🗃️ MongoDB Collections
-
-| Collection             | Purpose                                           |
-| ---------------------- | ------------------------------------------------- |
-| `printer_logs`         | Cleaned, normalized printer history (TTL enabled) |
-| `maintenance_required` | Anti-spam signals                                 |
-| `alerts`               | Rule-triggered alerts                             |
-
-TTL example:
-
-```python
-collection.create_index('timestamp', expireAfterSeconds=604800)
-```
-
-(7 days retention)
+You will now see the full pipeline operating through Kafka and MongoDB.
 
 ---
 
 ## 🧪 Debugging Tips
 
-* Use Kafka UI to inspect raw messages
-* If no data appears:
+* Use Kafka UI to inspect topics and message flow
+* If no messages appear:
 
   * Check simulator is running
-  * Check producer logs for API errors
-* Verify MongoDB TTL index exists
-* Reprocessing the same Kafka message should **not** create duplicates (idempotent design)
-
----
-
-## 🧭 Design Principles
-
-* Deterministic transformations
-* Idempotent processing
-* Explicit type normalization
-* Data-driven rules
-* Clear separation between ingestion, processing, and alerting
+  * Check producer logs
+* Verify MongoDB collections and TTL indexes
+* All processors are idempotent — restarting them is safe
 
 ---
 
@@ -288,30 +250,7 @@ collection.create_index('timestamp', expireAfterSeconds=604800)
 * Python
 * Kafka + Zookeeper (Docker)
 * MongoDB
-* QuixStreams (stream processing pattern)
 * Requests / Kafka-Python / Pandas
-
----
-
-## ✅ What this demonstrates
-
-This project showcases:
-
-* Real-time stream processing
-* Handling dirty telemetry data
-* Event deduplication
-* Sliding window anti-spam logic
-* Dynamic rule engine design
-* TTL-based log retention
-* Clean, production-style streaming architecture
-
----
-
-## 📎 Topic Name
-
-```
-printSimulatorAPI
-```
 
 ---
 
